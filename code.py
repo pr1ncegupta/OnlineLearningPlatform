@@ -16,18 +16,42 @@ def call_gemini(prompt: str) -> str:
     return response.text
 
 # App layout
-st.set_page_config(page_title="SkillPath AI MVP")
-st.title("SkillPath AI MVP: Screening & Roadmap")
+st.set_page_config(page_title="SkillPath AI MVP", layout="centered", initial_sidebar_state="auto")
+st.markdown("""
+    <style>
+    .stApp {
+        background-color: #f9f9f9;
+        color: #000000;
+    }
+    .stButton>button {
+        background-color: #4CAF50;
+        color: white;
+        border-radius: 8px;
+        padding: 10px;
+        font-weight: bold;
+    }
+    .stSelectbox>div>div {
+        background-color: #ffffff;
+        color: black;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+st.title("🧠 SkillPath AI: Personalized Learning Roadmaps")
+st.subheader("Start with a quick screening test and get a roadmap tailored for you!")
 
 # Topic selection
-topic = st.selectbox("Choose a topic to start:", ["-- Select --"] + TOPICS)
+selected_topic = st.selectbox("Choose a topic:", ["-- Select --"] + TOPICS)
 
-if topic != "-- Select --":
-    if "questions" not in st.session_state:
+if selected_topic != "-- Select --":
+    if "active_topic" not in st.session_state or st.session_state.active_topic != selected_topic:
+        st.session_state.active_topic = selected_topic
+        st.session_state.questions = []
+        st.session_state.answers = {}
         with st.spinner("Generating test..."):
             prompt = f"""
 You are an expert quiz generator.
-Generate 5 beginner to intermediate level MCQ questions for the topic: {topic}.
+Generate 5 beginner to intermediate level MCQ questions for the topic: {selected_topic}.
 Each question should have:
 - an 'id' (1-5)
 - a 'prompt' (the question)
@@ -54,26 +78,24 @@ Return ONLY a JSON array in this exact format:
             except Exception as e:
                 st.error(f"Failed to parse generated questions. Error: {e}")
 
-    if "questions" in st.session_state:
-        st.header(f"Screening Test: {topic}")
+    if st.session_state.questions:
+        st.header(f"📋 Screening Test: {selected_topic}")
         with st.form(key="test_form"):
-            selected_answers = {}
             for q in st.session_state.questions:
                 st.write(f"**Q{q['id']}:** {q['prompt']}")
-                selected = st.radio(
-                    label=f"Select answer for question {q['id']}",
+                st.session_state.answers[q['id']] = st.radio(
+                    label="",
                     options=q.get("choices", []),
                     key=f"q_{q['id']}"
                 )
-                selected_answers[q['id']] = selected
-            submit = st.form_submit_button("Submit Test")
+            submitted = st.form_submit_button("✅ Submit Test")
 
-        if submit:
+        if submitted:
             correct_count = 0
             feedback = []
             for q in st.session_state.questions:
                 qid = q['id']
-                user_answer = selected_answers.get(qid, "")
+                user_answer = st.session_state.answers.get(qid, "")
                 correct_answer = q['answer']
                 is_correct = (user_answer == correct_answer)
                 if is_correct:
@@ -85,16 +107,22 @@ Return ONLY a JSON array in this exact format:
                     "result": "✅" if is_correct else "❌"
                 })
 
-            st.header("Evaluation Insights")
-            st.write(f"You got {correct_count} out of {len(st.session_state.questions)} correct.")
+            st.success(f"You got {correct_count} out of {len(st.session_state.questions)} correct.")
+            st.header("🔍 Evaluation Insights")
             for item in feedback:
-                st.write(f"- {item['result']} **{item['question']}** | Your answer: `{item['your_answer']}` | Correct: `{item['correct_answer']}`")
+                st.markdown(f"- {item['result']} **{item['question']}**  \
+                            Your answer: `{item['your_answer']}` | Correct: `{item['correct_answer']}`")
 
-            # Generate roadmap prompt
+            # Generate roadmap
             weak_topics = [item['question'] for item in feedback if item['result'] == "❌"]
-            roadmap_prompt = f"Generate a step-by-step learning roadmap for someone struggling with the following questions/topics in {topic}: {weak_topics}. Include brief explanations and a useful video/document link for each. Return as markdown list."
+            if weak_topics:
+                roadmap_prompt = f"Generate a step-by-step learning roadmap for someone struggling with the following questions/topics in {selected_topic}: {weak_topics}. Include brief explanations and a useful video/document link for each. Return as markdown list."
+                with st.spinner("Creating your personalized roadmap..."):
+                    roadmap = call_gemini(roadmap_prompt)
+                st.header("🗺️ Your Learning Roadmap")
+                st.markdown(roadmap)
+            else:
+                st.info("You did great! No roadmap needed.")
 
-            with st.spinner("Generating roadmap..."):
-                roadmap = call_gemini(roadmap_prompt)
-            st.header("Personalized Roadmap")
-            st.markdown(roadmap)
+    st.markdown("---")
+    st.button("🔁 Choose Another Topic", on_click=lambda: st.session_state.pop("active_topic", None))
