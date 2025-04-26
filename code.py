@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import requests
 
@@ -8,7 +7,6 @@ GEMINI_API_KEY = st.secrets.get("gemini_api_key", "YOUR_API_KEY")
 TOPICS = ["Python Basics", "Data Structures", "Machine Learning"]
 
 # Helpers for Gemini API
-
 def call_gemini(task: str, params: dict) -> dict:
     payload = {"task": task, **params}
     headers = {
@@ -59,4 +57,3 @@ if topic != "-- Select --":
         st.header("Personalized Roadmap")
         for step in roadmap.get("steps", []):
             st.markdown(f"- **{step['title']}**: {step['description']} ([Link]({step['resource']}))")
-```
