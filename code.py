@@ -51,32 +51,39 @@ Return ONLY a JSON array in this exact format:
                 json_end = result.rfind(']') + 1
                 json_data = result[json_start:json_end]
                 st.session_state.questions = json.loads(json_data)
-                st.session_state.answers = []
             except Exception as e:
                 st.error(f"Failed to parse generated questions. Error: {e}")
 
     if "questions" in st.session_state:
         st.header(f"Screening Test: {topic}")
         with st.form(key="test_form"):
+            selected_answers = {}
             for q in st.session_state.questions:
                 st.write(f"**Q{q['id']}:** {q['prompt']}")
-                choice = st.radio(
+                selected = st.radio(
                     label=f"Select answer for question {q['id']}",
                     options=q.get("choices", []),
                     key=f"q_{q['id']}"
                 )
-                st.session_state.answers.append({"id": q['id'], "answer": choice})
+                selected_answers[q['id']] = selected
             submit = st.form_submit_button("Submit Test")
 
         if submit:
             correct_count = 0
             feedback = []
-            for i, response in enumerate(st.session_state.answers):
-                correct = st.session_state.questions[i]['answer']
-                is_correct = response['answer'] == correct
+            for q in st.session_state.questions:
+                qid = q['id']
+                user_answer = selected_answers.get(qid, "")
+                correct_answer = q['answer']
+                is_correct = (user_answer == correct_answer)
                 if is_correct:
                     correct_count += 1
-                feedback.append({"question": st.session_state.questions[i]['prompt'], "your_answer": response['answer'], "correct_answer": correct, "result": "✅" if is_correct else "❌"})
+                feedback.append({
+                    "question": q['prompt'],
+                    "your_answer": user_answer,
+                    "correct_answer": correct_answer,
+                    "result": "✅" if is_correct else "❌"
+                })
 
             st.header("Evaluation Insights")
             st.write(f"You got {correct_count} out of {len(st.session_state.questions)} correct.")
@@ -84,7 +91,7 @@ Return ONLY a JSON array in this exact format:
                 st.write(f"- {item['result']} **{item['question']}** | Your answer: `{item['your_answer']}` | Correct: `{item['correct_answer']}`")
 
             # Generate roadmap prompt
-            weak_topics = [q['prompt'] for i, q in enumerate(st.session_state.questions) if st.session_state.answers[i]['answer'] != q['answer']]
+            weak_topics = [item['question'] for item in feedback if item['result'] == "❌"]
             roadmap_prompt = f"Generate a step-by-step learning roadmap for someone struggling with the following questions/topics in {topic}: {weak_topics}. Include brief explanations and a useful video/document link for each. Return as markdown list."
 
             with st.spinner("Generating roadmap..."):
