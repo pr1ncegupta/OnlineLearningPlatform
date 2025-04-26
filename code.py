@@ -1,5 +1,6 @@
 import streamlit as st
 import google.generativeai as genai
+import json
 
 # Configuration
 GEMINI_API_KEY = st.secrets.get("gemini_api_key", "YOUR_API_KEY")
@@ -10,7 +11,6 @@ genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.0-flash")
 
 # Helpers for Gemini
-
 def call_gemini(prompt: str) -> str:
     response = model.generate_content(prompt)
     return response.text
@@ -25,13 +25,35 @@ topic = st.selectbox("Choose a topic to start:", ["-- Select --"] + TOPICS)
 if topic != "-- Select --":
     if "questions" not in st.session_state:
         with st.spinner("Generating test..."):
-            prompt = f"Generate 5 multiple-choice beginner to intermediate level questions with 4 options and correct answer indicated on the topic: {topic}. Return as a JSON list with 'id', 'prompt', 'choices', and 'answer'."
+            prompt = f"""
+You are an expert quiz generator.
+Generate 5 beginner to intermediate level MCQ questions for the topic: {topic}.
+Each question should have:
+- an 'id' (1-5)
+- a 'prompt' (the question)
+- 4 answer choices in a list
+- 'answer' (the correct one)
+
+Return ONLY a JSON array in this exact format:
+[
+  {{
+    "id": 1,
+    "prompt": "What does print() do in Python?",
+    "choices": ["It loops", "It prints", "It stores", "It defines"],
+    "answer": "It prints"
+  }},
+  ...
+]
+"""
             result = call_gemini(prompt)
             try:
-                st.session_state.questions = eval(result)  # NOTE: Use safer parsing in production
+                json_start = result.find('[')
+                json_end = result.rfind(']') + 1
+                json_data = result[json_start:json_end]
+                st.session_state.questions = json.loads(json_data)
                 st.session_state.answers = []
-            except:
-                st.error("Failed to parse generated questions.")
+            except Exception as e:
+                st.error(f"Failed to parse generated questions. Error: {e}")
 
     if "questions" in st.session_state:
         st.header(f"Screening Test: {topic}")
