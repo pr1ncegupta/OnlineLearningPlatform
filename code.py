@@ -15,43 +15,68 @@ def call_gemini(prompt: str) -> str:
     response = model.generate_content(prompt)
     return response.text
 
-# App layout
-st.set_page_config(page_title="SkillPath AI MVP", layout="centered", initial_sidebar_state="auto")
+# Dark mode styling
+st.set_page_config(page_title="SkillPath AI MVP", page_icon="🎓", layout="centered", initial_sidebar_state="collapsed")
+
+# Applying custom dark theme
 st.markdown("""
     <style>
-    .stApp {
-        background-color: #f9f9f9;
-        color: #000000;
+    body {
+        background-color: #121212;
+        color: white;
     }
     .stButton>button {
-        background-color: #4CAF50;
+        background-color: #6200EE;
         color: white;
         border-radius: 8px;
-        padding: 10px;
         font-weight: bold;
     }
-    .stSelectbox>div>div {
-        background-color: #ffffff;
-        color: black;
+    .stSelectbox>div>div>input {
+        background-color: #333333;
+        color: white;
+        border-radius: 8px;
+    }
+    .stTextInput>div>div>input {
+        background-color: #333333;
+        color: white;
+        border-radius: 8px;
+    }
+    .stRadio>div>label {
+        color: white;
+    }
+    .stMarkdown {
+        color: white;
     }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🧠 SkillPath AI: Personalized Learning Roadmaps")
-st.subheader("Start with a quick screening test and get a roadmap tailored for you!")
+# App layout
+st.title("SkillPath AI MVP: Screening & Roadmap")
 
 # Topic selection
-selected_topic = st.selectbox("Choose a topic:", ["-- Select --"] + TOPICS)
+topic = st.selectbox("Choose a topic to start:", ["-- Select --"] + TOPICS, key="topic")
 
-if selected_topic != "-- Select --":
-    if "active_topic" not in st.session_state or st.session_state.active_topic != selected_topic:
-        st.session_state.active_topic = selected_topic
-        st.session_state.questions = []
-        st.session_state.answers = {}
+def reset_test():
+    if "questions" in st.session_state:
+        del st.session_state.questions
+    if "selected_answers" in st.session_state:
+        del st.session_state.selected_answers
+    if "correct_count" in st.session_state:
+        del st.session_state.correct_count
+    if "feedback" in st.session_state:
+        del st.session_state.feedback
+
+if topic != "-- Select --":
+    # Reset session state if the topic is changed
+    if topic != st.session_state.get("topic", ""):
+        reset_test()
+        st.session_state["topic"] = topic
+
+    if "questions" not in st.session_state:
         with st.spinner("Generating test..."):
             prompt = f"""
 You are an expert quiz generator.
-Generate 5 beginner to intermediate level MCQ questions for the topic: {selected_topic}.
+Generate 5 beginner to intermediate level MCQ questions for the topic: {topic}.
 Each question should have:
 - an 'id' (1-5)
 - a 'prompt' (the question)
@@ -78,24 +103,27 @@ Return ONLY a JSON array in this exact format:
             except Exception as e:
                 st.error(f"Failed to parse generated questions. Error: {e}")
 
-    if st.session_state.questions:
-        st.header(f"📋 Screening Test: {selected_topic}")
+    if "questions" in st.session_state:
+        st.header(f"Screening Test: {topic}")
         with st.form(key="test_form"):
+            selected_answers = st.session_state.get("selected_answers", {})
             for q in st.session_state.questions:
                 st.write(f"**Q{q['id']}:** {q['prompt']}")
-                st.session_state.answers[q['id']] = st.radio(
-                    label="",
+                selected = st.radio(
+                    label=f"Select answer for question {q['id']}",
                     options=q.get("choices", []),
                     key=f"q_{q['id']}"
                 )
-            submitted = st.form_submit_button("✅ Submit Test")
+                selected_answers[q['id']] = selected
+            st.session_state["selected_answers"] = selected_answers
+            submit = st.form_submit_button("Submit Test")
 
-        if submitted:
+        if submit:
             correct_count = 0
             feedback = []
             for q in st.session_state.questions:
                 qid = q['id']
-                user_answer = st.session_state.answers.get(qid, "")
+                user_answer = selected_answers.get(qid, "")
                 correct_answer = q['answer']
                 is_correct = (user_answer == correct_answer)
                 if is_correct:
@@ -107,22 +135,19 @@ Return ONLY a JSON array in this exact format:
                     "result": "✅" if is_correct else "❌"
                 })
 
-            st.success(f"You got {correct_count} out of {len(st.session_state.questions)} correct.")
-            st.header("🔍 Evaluation Insights")
+            st.session_state["correct_count"] = correct_count
+            st.session_state["feedback"] = feedback
+
+            st.header("Evaluation Insights")
+            st.write(f"You got {correct_count} out of {len(st.session_state.questions)} correct.")
             for item in feedback:
-                st.markdown(f"- {item['result']} **{item['question']}**  \
-                            Your answer: `{item['your_answer']}` | Correct: `{item['correct_answer']}`")
+                st.write(f"- {item['result']} **{item['question']}** | Your answer: `{item['your_answer']}` | Correct: `{item['correct_answer']}`")
 
-            # Generate roadmap
+            # Generate roadmap prompt
             weak_topics = [item['question'] for item in feedback if item['result'] == "❌"]
-            if weak_topics:
-                roadmap_prompt = f"Generate a step-by-step learning roadmap for someone struggling with the following questions/topics in {selected_topic}: {weak_topics}. Include brief explanations and a useful video/document link for each. Return as markdown list."
-                with st.spinner("Creating your personalized roadmap..."):
-                    roadmap = call_gemini(roadmap_prompt)
-                st.header("🗺️ Your Learning Roadmap")
-                st.markdown(roadmap)
-            else:
-                st.info("You did great! No roadmap needed.")
+            roadmap_prompt = f"Generate a step-by-step learning roadmap for someone struggling with the following questions/topics in {topic}: {weak_topics}. Include brief explanations and a useful video/document link for each. Return as markdown list."
 
-    st.markdown("---")
-    st.button("🔁 Choose Another Topic", on_click=lambda: st.session_state.pop("active_topic", None))
+            with st.spinner("Generating roadmap..."):
+                roadmap = call_gemini(roadmap_prompt)
+            st.header("Personalized Roadmap")
+            st.markdown(roadmap)
